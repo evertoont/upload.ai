@@ -1,4 +1,11 @@
-import { ChangeEvent, FormEvent, useMemo, useRef, useState } from "react";
+import {
+  ChangeEvent,
+  FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
@@ -7,8 +14,23 @@ import { FileVideo, Upload } from "lucide-react";
 import { getFFmpeg } from "@/lib/ffmpeg";
 import { fetchFile } from "@ffmpeg/util";
 import { api } from "@/lib/axios";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select";
+import { clearString } from "@/lib/utils";
 
 type Status = "waiting" | "converting" | "uploading" | "generating" | "success";
+
+interface Video {
+  id: string;
+  name: string;
+  path: string;
+  transcription: string;
+}
 
 const statusMessages = {
   converting: "Convertendo...",
@@ -25,6 +47,8 @@ export function VideoInputForm(props: VideoInputFormProps) {
   const { onVideoUploaded } = props;
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [status, setStatus] = useState<Status>("waiting");
+  const [videos, setVideos] = useState<Video[]>([]);
+  const [selectedVideo, setSelectedVideo] = useState("");
 
   const promptInputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -51,6 +75,8 @@ export function VideoInputForm(props: VideoInputFormProps) {
       console.log("Convert progress: " + Math.round(progress.progress * 100));
     });
 
+    const fileNameClear = clearString(video.name.replace(".mp4", ""));
+
     await ffmpeg.exec([
       "-i",
       "input.mp4",
@@ -60,13 +86,13 @@ export function VideoInputForm(props: VideoInputFormProps) {
       "20k",
       "-acodec",
       "libmp3lame",
-      "output.mp3",
+      `${fileNameClear}.mp3`,
     ]);
 
-    const data = await ffmpeg.readFile("output.mp3");
+    const data = await ffmpeg.readFile(`${fileNameClear}.mp3`);
 
     const audioFileBlob = new Blob([data], { type: "audio/mp3" });
-    const audioFile = new File([audioFileBlob], "output.mp3", {
+    const audioFile = new File([audioFileBlob], `${fileNameClear}.mp3`, {
       type: "audio/mpeg",
     });
 
@@ -121,62 +147,102 @@ export function VideoInputForm(props: VideoInputFormProps) {
     return URL.createObjectURL(videoFile);
   }, [videoFile]);
 
+  const handlePromptSelected = (value: string) => {
+    setSelectedVideo(value);
+
+    if (value === "newVideo") return;
+
+    const selectedVideo = videos.find((video) => video.id === value);
+
+    if (!selectedVideo) {
+      return;
+    }
+
+    onVideoUploaded(selectedVideo.id);
+  };
+
+  useEffect(() => {
+    api.get("/videos").then((response) => {
+      setVideos(response.data);
+    });
+  }, []);
+
   return (
     <form onSubmit={handleUploadVideo} className="space-y-6">
-      <label
-        htmlFor="video"
-        className="relative border flex rounded-md aspect-video cursor-pointer border-dashed text-sm flex-col gap-2 items-center justify-center text-muted-foreground hover:bg-primary/5"
-      >
-        {previewURL ? (
-          <video
-            src={previewURL}
-            controls={false}
-            className="pointer-events-none absolute inset-0"
-          />
-        ) : (
-          <>
-            <FileVideo className="w-4 h-4" />
-            Selecione um vídeo
-          </>
-        )}
-      </label>
-
-      <input
-        type="file"
-        id="video"
-        accept="video/mp4"
-        className="sr-only"
-        onChange={handleFileSelected}
-      />
-
-      <Separator />
-
       <div className="space-y-2">
-        <Label htmlFor="transcription_prompt">Prompt de transcrição</Label>
-        <Textarea
-          ref={promptInputRef}
-          disabled={status !== "waiting"}
-          id="transcription_prompt"
-          className="h-20 leading-relaxed resize-none"
-          placeholder="Inclua palavras-chave mencionadas no vídeo separadas por vírgula (,)"
-        />
+        <Label>Video</Label>
+        <Select onValueChange={handlePromptSelected}>
+          <SelectTrigger>
+            <SelectValue placeholder="Selecione um video..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="newVideo">Adicionar um video novo</SelectItem>
+            {videos?.map((video) => {
+              return (
+                <SelectItem key={video.id} value={video.id}>
+                  {video.name.replace(".mp3", "").slice(0, 35)}
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
       </div>
 
-      <Button
-        data-success={status === "success"}
-        disabled={status !== "waiting" || !videoFile}
-        type="submit"
-        className="w-full data-[success=true]:bg-emerald-700"
-      >
-        {status === "waiting" ? (
-          <>
-            Carregar video
-            <Upload className="w-4 h-4 ml-2" />
-          </>
-        ) : (
-          statusMessages[status]
-        )}
-      </Button>
+      {selectedVideo === "newVideo" && (
+        <>
+          <label
+            htmlFor="video"
+            className="relative border flex rounded-md aspect-video cursor-pointer border-dashed text-sm flex-col gap-2 items-center justify-center text-muted-foreground hover:bg-primary/5"
+          >
+            {previewURL ? (
+              <video
+                src={previewURL}
+                controls={false}
+                className="pointer-events-none absolute inset-0"
+              />
+            ) : (
+              <>
+                <FileVideo className="w-4 h-4" />
+                Selecione um vídeo
+              </>
+            )}
+          </label>
+          <input
+            type="file"
+            id="video"
+            accept="video/mp4"
+            className="sr-only"
+            onChange={handleFileSelected}
+          />
+          <Separator />
+          <div className="space-y-2">
+            <Label htmlFor="transcription_prompt">Prompt de transcrição</Label>
+            <Textarea
+              ref={promptInputRef}
+              disabled={status !== "waiting"}
+              id="transcription_prompt"
+              className="h-20 leading-relaxed resize-none"
+              placeholder="Inclua palavras-chave mencionadas no vídeo separadas por vírgula (,)"
+            />
+          </div>
+
+          <Button
+            data-success={status === "success"}
+            disabled={status !== "waiting" || !videoFile}
+            type="submit"
+            className="w-full data-[success=true]:bg-emerald-700"
+          >
+            {status === "waiting" ? (
+              <>
+                Carregar video
+                <Upload className="w-4 h-4 ml-2" />
+              </>
+            ) : (
+              statusMessages[status]
+            )}
+          </Button>
+        </>
+      )}
     </form>
   );
 }
