@@ -22,7 +22,7 @@
 
 This project was developed using the following technologies:
 
-- [React](https://reactjs.org)
+- [React + Vite](https://vitejs.dev/)
 - [TypeScript](https://www.typescriptlang.org/)
 - [Prisma](https://www.prisma.io/)
 - [Openai](https://openai.com/)
